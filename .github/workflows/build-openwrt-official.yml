@@ -24,7 +24,7 @@ env:
   FEEDS_CONF: router-config/openwrt-21.02/feeds.conf.default
   CONFIG_FILE: router-config/openwrt-21.02/.config
   DIY_P1_SH: router-config/openwrt-21.02/diy-part1.sh
-  DIY_P2_SH: router-config/openwrt-21.02/diy-part2.sh
+  DIY_P2_SH: router-config/openwrt-master/diy-part2.sh
   TZ: Asia/Shanghai
 
 jobs:
