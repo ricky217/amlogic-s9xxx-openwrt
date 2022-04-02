@@ -51,4 +51,5 @@ svn co https://github.com/hubutui/p7zip-lede/trunk package/lean/p7zip
 
 # Add luci-app-openclash
 svn co https://github.com/vernesong/OpenClash/trunk/luci-app-openclash package/openwrt-openclash
+sed -i 's/+kmod-inet-diag//g' package/openwrt-openclash/Makefile 
 pushd package/openwrt-openclash/tools/po2lmo && make && sudo make install 2>/dev/null && popd
