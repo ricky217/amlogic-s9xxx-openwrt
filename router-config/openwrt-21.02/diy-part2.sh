@@ -51,3 +51,4 @@ svn co https://github.com/hubutui/p7zip-lede/trunk package/lean/p7zip
 
 # Add small-package
 git clone https://github.com/kenzok8/small-package package/small-package
+sed -i 's/+kmod-inet-diag//g' package/small-package/openwrt-openclash/Makefile 
