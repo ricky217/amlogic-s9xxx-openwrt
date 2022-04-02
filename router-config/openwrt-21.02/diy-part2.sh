@@ -48,3 +48,8 @@ svn co https://github.com/hubutui/p7zip-lede/trunk package/lean/p7zip
 # git apply ../router-config/patches/{0001*,0002*}.patch --directory=feeds/luci
 #
 # ------------------------------- Other ends -------------------------------
+
+# Add luci-app-openclash
+git clone https://github.com/vernesong/OpenClash.git package-temp
+mv -f package-temp/luci-app-openclash package/lean/
+rm -rf package-temp
