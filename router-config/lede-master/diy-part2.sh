@@ -58,3 +58,7 @@ svn co https://github.com/hubutui/p7zip-lede/trunk package/p7zip
 #
 # ------------------------------- Other ends -------------------------------
 
+# Add luci-app-openclash
+git clone https://github.com/vernesong/OpenClash.git package-temp
+mv -f package-temp/luci-app-openclash package/lean/
+rm -rf package-temp
