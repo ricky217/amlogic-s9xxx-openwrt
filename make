@@ -55,6 +55,7 @@ armbian_path="${amlogic_path}/amlogic-armbian"
 kernel_path="${amlogic_path}/amlogic-kernel"
 uboot_path="${amlogic_path}/amlogic-u-boot"
 configfiles_path="${amlogic_path}/common-files"
+bootfs_path="${configfiles_path}/bootfs"
 openvfd_path="${configfiles_path}/rootfs/usr/share/openvfd"
 # Add custom openwrt firmware information
 op_release="etc/flippy-openwrt-release"
@@ -189,6 +190,12 @@ download_depends() {
     else
         svn co ${depends_repo}/amlogic-armbian ${armbian_path} --force
     fi
+    # Sync /boot related files
+    if [ -d "${bootfs_path}" ]; then
+        svn up ${bootfs_path} --force
+    else
+        svn co ${depends_repo}/common-files/bootfs ${bootfs_path} --force
+    fi
     # Sync u-boot related files
     if [ -d "${uboot_path}" ]; then
         svn up ${uboot_path} --force
@@ -273,15 +280,16 @@ confirm_version() {
     cd ${make_path}
 
     # Confirm kernel branch
-    k510_ver=$(echo "${kernel}" | cut -d '.' -f1)
-    k510_maj=$(echo "${kernel}" | cut -d '.' -f2)
-    if [ "${k510_ver}" -eq "5" ]; then
-        if [ "${k510_maj}" -ge "10" ]; then
+    kernel_mainversion=$(echo "${kernel}" | cut -d '.' -f1)
+    kernel_patchlevel=$(echo "${kernel}" | cut -d '.' -f2)
+    if [ "${kernel_mainversion}" -eq "5" ]; then
+        # The 5.4.y and 5.15.y kernels have TEXT_OFFSET patch and do not need u-boot support
+        if [[ "${kernel_patchlevel}" -ge "10" && "${kernel_patchlevel}" -ne "15" ]]; then
             K510="1"
         else
             K510="0"
         fi
-    elif [ "${k510_ver}" -gt "5" ]; then
+    elif [ "${kernel_mainversion}" -gt "5" ]; then
         K510="1"
     else
         K510="0"
@@ -419,14 +427,20 @@ extract_armbian() {
 
     # Copy OpenWrt files
     cp -rf ${root_comm}/* ${root}
-    # Copy the overload files
-    cp -f ${uboot_path}/overload/* ${boot}
+
+    # Unzip the relevant files
+    tar -xJf "${armbian_path}/boot-common.tar.xz" -C ${boot}
+    tar -xJf "${armbian_path}/firmware.tar.xz" -C ${root}
+
+    # Copy the same files
+    [ "$(ls ${configfiles_path}/bootfs 2>/dev/null | wc -w)" -ne "0" ] && cp -rf ${configfiles_path}/bootfs/* ${boot}
+    [ "$(ls ${configfiles_path}/rootfs 2>/dev/null | wc -w)" -ne "0" ] && cp -rf ${configfiles_path}/rootfs/* ${root}
+
     # Copy the bootloader files
     [ -d "${root}/lib/u-boot" ] || mkdir -p "${root}/lib/u-boot"
     cp -f ${uboot_path}/bootloader/* ${root}/lib/u-boot
-
-    tar -xJf "${armbian_path}/boot-common.tar.xz" -C ${boot}
-    tar -xJf "${armbian_path}/firmware.tar.xz" -C ${root}
+    # Copy the overload files
+    cp -f ${uboot_path}/overload/* ${boot}
 
     # Process kernel files
     if [ -f ${kernel_dir}/boot-* -a -f ${kernel_dir}/dtb-amlogic-* -a -f ${kernel_dir}/modules-* ]; then
@@ -449,12 +463,6 @@ extract_armbian() {
 
 refactor_files() {
     process_msg " (4/7) Refactor related files."
-    cd ${make_path}
-
-    # Complete file for ${root}: [ /etc ], [ /usr ] etc.
-    [ "$(ls ${configfiles_path}/rootfs 2>/dev/null | wc -w)" -ne "0" ] && cp -rf ${configfiles_path}/rootfs/* ${root}
-    sync
-
     cd ${root}
 
     # Add other operations below
@@ -527,11 +535,11 @@ EOF
     echo "pwm_meson" >etc/modules.d/pwm_meson
 
     # Relink the kmod program
-    [ -x "usr/sbin/kmod" ] && (
+    [ -x "sbin/kmod" ] && (
         kmod_list="depmod insmod lsmod modinfo modprobe rmmod"
         for ki in ${kmod_list}; do
-            rm -f usr/sbin/${ki} 2>/dev/null
-            ln -sf kmod usr/sbin/${ki}
+            rm -f sbin/${ki} 2>/dev/null
+            ln -sf kmod sbin/${ki}
         done
     )
 
@@ -616,16 +624,18 @@ EOF
 
     cd ${boot}
 
+    # For btrfs file system
+    uenv_mount_string="UUID=${ROOTFS_UUID} rootflags=compress=zstd:6 rootfstype=btrfs"
     boot_conf_file="uEnv.txt"
-    cp -f ${configfiles_path}/bootfs/${boot_conf_file} .
     [ -f "${boot_conf_file}" ] || error_msg "The [ ${boot_conf_file} ] file does not exist."
-    sed -i "s|LABEL=ROOTFS|UUID=${ROOTFS_UUID}|g" ${boot_conf_file}
+    sed -i "s|LABEL=ROOTFS|${uenv_mount_string}|g" ${boot_conf_file}
     sed -i "s|meson.*.dtb|${FDTFILE}|g" ${boot_conf_file}
 
     # Add u-boot.ext for 5.10 kernel
-    if [[ "${K510}" -eq "1" && -n "${UBOOT_OVERLOAD}" ]]; then
-        if [ -f "${UBOOT_OVERLOAD}" ]; then
-            cp -f ${UBOOT_OVERLOAD} u-boot.ext && sync && chmod +x u-boot.ext
+    if [[ "${K510}" -eq "1" ]]; then
+        if [[ -n "${UBOOT_OVERLOAD}" && -f "${UBOOT_OVERLOAD}" ]]; then
+            cp -f ${UBOOT_OVERLOAD} u-boot.ext
+            chmod +x u-boot.ext
         else
             error_msg "${kernel} have no the 5.10 kernel u-boot file: [ ${UBOOT_OVERLOAD} ]"
         fi
@@ -660,14 +670,16 @@ make_image() {
     sync
 
     # Write the specified bootloader
-    if [[ "${MAINLINE_UBOOT}" != "" && -f "${root}/lib/u-boot/${MAINLINE_UBOOT}" ]]; then
-        dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
-        dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
-        #echo -e "${soc}_v${kernel} write Mainline bootloader: ${MAINLINE_UBOOT}"
-    elif [[ "${ANDROID_UBOOT}" != "" && -f "${root}/lib/u-boot/${ANDROID_UBOOT}" ]]; then
-        dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
-        dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
-        #echo -e "${soc}_v${kernel} write Android bootloader: ${ANDROID_UBOOT}"
+    if [[ "${K510}" -eq "1" ]]; then
+        if [[ "${MAINLINE_UBOOT}" != "" && -f "${root}/lib/u-boot/${MAINLINE_UBOOT}" ]]; then
+            dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
+            dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
+            #echo -e "${soc}_v${kernel} write Mainline bootloader: ${MAINLINE_UBOOT}"
+        elif [[ "${ANDROID_UBOOT}" != "" && -f "${root}/lib/u-boot/${ANDROID_UBOOT}" ]]; then
+            dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
+            dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
+            #echo -e "${soc}_v${kernel} write Android bootloader: ${ANDROID_UBOOT}"
+        fi
     fi
     sync
 }
