@@ -13,12 +13,6 @@
 # Copyright (C) 2020- https://github.com/tuanqing/mknop
 # Copyright (C) 2020- https://github.com/ophub/amlogic-s9xxx-openwrt
 #
-#======= Install the basic packages of make openwrt for Ubuntu 20.04 =======
-#
-# sudo apt-get update -y
-# sudo apt-get full-upgrade -y
-# sudo apt-get install -y $(curl -fsSL git.io/ubuntu-2004-openwrt)
-#
 # Command: sudo ./make -d
 # Command optional parameters please refer to the source code repository
 #
@@ -26,6 +20,7 @@
 #
 # error_msg          : Output error message
 # process_msg        : Output process message
+# get_textoffset     : Get kernel TEXT_OFFSET
 #
 # init_var           : Initialize all variables
 # find_openwrt       : Find OpenWrt file (openwrt-armvirt/*rootfs.tar.gz)
@@ -67,7 +62,7 @@ script_repo="https://github.com/ophub/luci-app-amlogic/tree/main/luci-app-amlogi
 kernel_repo="https://github.com/ophub/kernel/tree/main/pub"
 version_branch="stable"
 auto_kernel="true"
-build_kernel=("5.15.25" "5.4.180")
+build_kernel=("5.15.25" "5.10.100")
 # Set supported SoC
 build_openwrt=(
     "s922x" "s922x-n2" "s922x-reva" "a311d"
@@ -95,6 +90,13 @@ process_msg() {
     echo -e " [\033[1;92m ${soc} \033[0m - \033[1;92m ${kernel} \033[0m] ${1}"
 }
 
+get_textoffset() {
+    vmlinuz_name="${1}"
+    K510="1"
+    # With TEXT_OFFSET patch is [ 0108 ], without TEXT_OFFSET patch is [ 0000 ]
+    [[ "$(hexdump -n 15 -x "${vmlinuz_name}" 2>/dev/null | head -n 1 | awk '{print $7}')" == "0108" ]] && K510="0"
+}
+
 init_var() {
     cd ${make_path}
 
@@ -112,11 +114,13 @@ init_var() {
             ;;
         -b | --buildSoC)
             if [ -n "${2}" ]; then
-                unset build_openwrt
-                oldIFS=$IFS
-                IFS=_
-                build_openwrt=(${2})
-                IFS=$oldIFS
+                if [[ "${2}" != "all" ]]; then
+                    unset build_openwrt
+                    oldIFS=$IFS
+                    IFS=_
+                    build_openwrt=(${2})
+                    IFS=$oldIFS
+                fi
                 shift
             else
                 error_msg "Invalid -b parameter [ ${2} ]!"
@@ -279,22 +283,6 @@ confirm_version() {
     process_msg " (1/7) Confirm version type."
     cd ${make_path}
 
-    # Confirm kernel branch
-    kernel_mainversion=$(echo "${kernel}" | cut -d '.' -f1)
-    kernel_patchlevel=$(echo "${kernel}" | cut -d '.' -f2)
-    if [ "${kernel_mainversion}" -eq "5" ]; then
-        # The 5.4.y and 5.15.y kernels have TEXT_OFFSET patch and do not need u-boot support
-        if [[ "${kernel_patchlevel}" -ge "10" && "${kernel_patchlevel}" -ne "15" ]]; then
-            K510="1"
-        else
-            K510="0"
-        fi
-    elif [ "${kernel_mainversion}" -gt "5" ]; then
-        K510="1"
-    else
-        K510="0"
-    fi
-
     # Confirm soc branch
     case "${soc}" in
     s905x3 | x96 | hk1 | h96 | ugoosx3)
@@ -316,9 +304,9 @@ confirm_version() {
         ANDROID_UBOOT=""
         ;;
     s905l3a | e900v22c | e900v22d)
-        FDTFILE="meson-g12a-u200.dtb"
-        UBOOT_OVERLOAD="u-boot-u200.bin"
-        MAINLINE_UBOOT=""
+        FDTFILE="meson-g12a-s905l3a-e900v22c.dtb"
+        UBOOT_OVERLOAD="u-boot-e900v22c.bin"
+        MAINLINE_UBOOT="e900v22c-u-boot.bin.sd.bin"
         ANDROID_UBOOT=""
         ;;
     s905x | hg680p | b860h)
@@ -444,13 +432,13 @@ extract_armbian() {
 
     # Process kernel files
     if [ -f ${kernel_dir}/boot-* -a -f ${kernel_dir}/dtb-amlogic-* -a -f ${kernel_dir}/modules-* ]; then
-        mkdir -p ${boot}/dtb/amlogic ${root}/lib/modules
-
         tar -xzf ${kernel_dir}/dtb-amlogic-*.tar.gz -C ${boot}/dtb/amlogic
 
         tar -xzf ${kernel_dir}/boot-*.tar.gz -C ${boot}
-        mv -f ${boot}/uInitrd-* ${boot}/uInitrd && mv -f ${boot}/vmlinuz-* ${boot}/zImage 2>/dev/null
+        cp -f ${boot}/uInitrd-* ${boot}/uInitrd && cp -f ${boot}/vmlinuz-* ${boot}/zImage 2>/dev/null
+        get_textoffset "${boot}/zImage"
 
+        mkdir -p ${boot}/dtb/amlogic ${root}/lib/modules
         tar -xzf ${kernel_dir}/modules-*.tar.gz -C ${root}/lib/modules
         cd ${root}/lib/modules/*/
         rm -rf *.ko
@@ -632,13 +620,11 @@ EOF
     sed -i "s|meson.*.dtb|${FDTFILE}|g" ${boot_conf_file}
 
     # Add u-boot.ext for 5.10 kernel
-    if [[ "${K510}" -eq "1" ]]; then
-        if [[ -n "${UBOOT_OVERLOAD}" && -f "${UBOOT_OVERLOAD}" ]]; then
-            cp -f ${UBOOT_OVERLOAD} u-boot.ext
-            chmod +x u-boot.ext
-        else
-            error_msg "${kernel} have no the 5.10 kernel u-boot file: [ ${UBOOT_OVERLOAD} ]"
-        fi
+    if [[ "${K510}" -eq "1" && -n "${UBOOT_OVERLOAD}" && -f "${UBOOT_OVERLOAD}" ]]; then
+        cp -f ${UBOOT_OVERLOAD} u-boot.ext
+        chmod +x u-boot.ext
+    elif [[ "${K510}" -eq "1" ]] && [[ -z "${UBOOT_OVERLOAD}" || ! -f "${UBOOT_OVERLOAD}" ]]; then
+        error_msg "${soc} SoC does not support using ${kernel} kernel, missing u-boot."
     fi
     sync
 }
@@ -658,8 +644,8 @@ make_image() {
     dd if=/dev/zero of=${build_image_file} bs=1M count=${IMG_SIZE} conv=fsync 2>/dev/null && sync
 
     parted -s ${build_image_file} mklabel msdos 2>/dev/null
-    parted -s ${build_image_file} mkpart primary fat32 $((SKIP_MB))M $((SKIP_MB + BOOT_MB - 1))M 2>/dev/null
-    parted -s ${build_image_file} mkpart primary btrfs $((SKIP_MB + BOOT_MB))M 100% 2>/dev/null
+    parted -s ${build_image_file} mkpart primary fat32 $((SKIP_MB))MiB $((SKIP_MB + BOOT_MB - 1))MiB 2>/dev/null
+    parted -s ${build_image_file} mkpart primary btrfs $((SKIP_MB + BOOT_MB))MiB 100% 2>/dev/null
     sync
 
     loop_new=$(losetup -P -f --show "${build_image_file}")
@@ -670,16 +656,14 @@ make_image() {
     sync
 
     # Write the specified bootloader
-    if [[ "${K510}" -eq "1" ]]; then
-        if [[ "${MAINLINE_UBOOT}" != "" && -f "${root}/lib/u-boot/${MAINLINE_UBOOT}" ]]; then
-            dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
-            dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
-            #echo -e "${soc}_v${kernel} write Mainline bootloader: ${MAINLINE_UBOOT}"
-        elif [[ "${ANDROID_UBOOT}" != "" && -f "${root}/lib/u-boot/${ANDROID_UBOOT}" ]]; then
-            dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
-            dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
-            #echo -e "${soc}_v${kernel} write Android bootloader: ${ANDROID_UBOOT}"
-        fi
+    if [[ "${MAINLINE_UBOOT}" != "" && -f "${root}/lib/u-boot/${MAINLINE_UBOOT}" ]]; then
+        dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
+        dd if="${root}/lib/u-boot/${MAINLINE_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
+        #echo -e "${soc}_v${kernel} write Mainline bootloader: ${MAINLINE_UBOOT}"
+    elif [[ "${ANDROID_UBOOT}" != "" && -f "${root}/lib/u-boot/${ANDROID_UBOOT}" ]]; then
+        dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=1 count=444 conv=fsync 2>/dev/null
+        dd if="${root}/lib/u-boot/${ANDROID_UBOOT}" of="${loop_new}" bs=512 skip=1 seek=1 conv=fsync 2>/dev/null
+        #echo -e "${soc}_v${kernel} write Android bootloader: ${ANDROID_UBOOT}"
     fi
     sync
 }
