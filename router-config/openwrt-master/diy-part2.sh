@@ -51,3 +51,4 @@ svn co https://github.com/ophub/luci-app-amlogic/trunk package/luci-app-amlogic
 
 # Add small-package
 git clone https://github.com/kenzok8/small-package package/small-package
+#sed -i 's/+kmod-inet-diag//g' package/small-package/luci-app-openclash/Makefile
