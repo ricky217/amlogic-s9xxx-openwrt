@@ -3,7 +3,7 @@
 # https://github.com/ophub/amlogic-s9xxx-openwrt
 # Description: Automatically Build OpenWrt for Amlogic s9xxx tv box
 # Function: Diy script (After Update feeds, Modify the default IP, hostname, theme, add/remove software packages, etc.)
-# Source code repository: https://github.com/openwrt/openwrt / Branch: 21.02
+# Source code repository: https://github.com/openwrt/openwrt / Branch: master
 #========================================================================================================================
 
 # ------------------------------- Main source started -------------------------------
@@ -28,7 +28,7 @@ sed -i 's/192.168/10.10/g' package/base-files/files/bin/config_generate
 # ------------------------------- Other started -------------------------------
 #
 # Add luci-app-amlogic
-svn co https://github.com/ophub/luci-app-amlogic/trunk package/luci-app-amlogic
+svn co https://github.com/ophub/luci-app-amlogic/trunk/luci-app-amlogic package/luci-app-amlogic
 
 # Add p7zip
 #svn co https://github.com/hubutui/p7zip-lede/trunk package/lean/p7zip
