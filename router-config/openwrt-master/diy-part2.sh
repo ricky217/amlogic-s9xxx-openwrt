@@ -49,4 +49,6 @@ svn co https://github.com/ophub/luci-app-amlogic/trunk/luci-app-amlogic package/
 # ------------------------------- Addition ---------------------------------
 # Add small-package
 git clone https://github.com/kenzok8/small-package package/small-package
+rm -rf package/small-package/luci-app-openclash
+svn co https://github.com/vernesong/OpenClash/branches/dev/luci-app-openclash package/luci-app-openclash
 # ------------------------------- Addition ends -------------------------------
