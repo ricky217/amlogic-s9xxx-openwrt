@@ -1,26 +1,30 @@
 #=====================================================================================
 # https://github.com/ophub/amlogic-s9xxx-openwrt
-# Description: Use Releases file to packaging
+# Description: Build OpenWrt with Image Builder
+# Instructions: https://openwrt.org/docs/guide-user/additional-software/imagebuilder
+# Download options: https://downloads.openwrt.org/releases
 #=====================================================================================
 
-name: Use Releases file to Packaging
+name: Build OpenWrt with ImageBuilder
 
 on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Select the source branch"
+        description: "Select the releases branch"
         required: false
-        default: "lede"
+        default: "22.03.0"
         type: choice
         options:
-          - lede
-          - official
+          - 22.03.0
+          - 21.02.3
+          - 19.07.10
+          - 18.06.9
       openwrt_soc:
-        description: "Select device SoC"
+        description: "Select Amlogic SoC"
         required: false
-        default: "all"
+        default: "s905x3_s905d_s912"
         type: choice
         options:
           - all
@@ -66,6 +70,7 @@ on:
 
 env:
   TZ: America/New_York
+  IMAGEBUILDER_SH: router-config/openwrt-imagebuilder/imagebuilder.sh
 
 jobs:
   build:
@@ -89,22 +94,18 @@ jobs:
           sudo timedatectl set-timezone "${TZ}"
           echo "::set-output name=status::success"
 
-      - name: Download OpenWrt Armvirt firmware
-        id: down
+      - name: Build Rootfs with Image Builder
+        id: imagebuilder
         if: (!cancelled())
         run: |
-          openwrt_url="$(curl -s "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" | grep -o "OpenWrt_.*${{ github.event.inputs.branch }}.*/.*rootfs.tar.gz" | head -n 1)"
-          [[ -z "${openwrt_url}" ]] && echo -e "OpenWrt file not found!" && exit 1
-          #
-          armvirt_tarfile_path="openwrt/bin/targets/armvirt/64"
-          [[ -d "${armvirt_tarfile_path}" ]] || mkdir -p ${armvirt_tarfile_path}
-          #
-          wget -q -P "${armvirt_tarfile_path}" "https://github.com/${GITHUB_REPOSITORY}/releases/download/${openwrt_url}"
-          [[ "${?}" -ne "0" ]] && echo "The armvirt file download failed!" && exit 1
+          RELEASES_BRANCH="${{ github.event.inputs.branch }}"
+          chmod +x ${IMAGEBUILDER_SH}
+          ${IMAGEBUILDER_SH} ${RELEASES_BRANCH}
+          echo "RELEASES_BRANCH=${RELEASES_BRANCH}" >> $GITHUB_ENV
           echo "::set-output name=status::success"
 
       - name: Build OpenWrt firmware
-        if: steps.down.outputs.status == 'success' && !cancelled()
+        if: steps.imagebuilder.outputs.status == 'success' && !cancelled()
         uses: ophub/amlogic-s9xxx-openwrt@main
         with:
           openwrt_path: openwrt/bin/targets/*/*/*rootfs.tar.gz
@@ -117,7 +118,7 @@ jobs:
         uses: ncipollo/release-action@main
         if: env.PACKAGED_STATUS == 'success' && !cancelled()
         with:
-          tag: OpenWrt_Aml_${{ github.event.inputs.branch }}_${{ env.PACKAGED_OUTPUTDATE }}
+          tag: OpenWrt_Aml_imagebuilder_${{ env.RELEASES_BRANCH }}_${{ env.PACKAGED_OUTPUTDATE }}
           artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           allowUpdates: true
           token: ${{ secrets.GH_TOKEN }}

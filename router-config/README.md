@@ -21,6 +21,7 @@ How to use GitHub Actions cloud to compile OpenWrt, and many of the content in t
       - [Example 1, Add a third-party software package](#example-1-add-a-third-party-software-package)
       - [Example 2: Replace the existing software package](#example-2-replace-the-existing-software-package)
       - [Example 3: Modifying the code in the source code library](#example-3-modifying-the-code-in-the-source-code-library)
+    - [4.3 Make firmware with Image Builder](#43-make-firmware-with-image-builder)
   - [5. Compile the firmware](#5-compile-the-firmware)
     - [5.1 Manual compilation](#51-manual-compilation)
     - [5.2 Compile at the agreed time](#52-compile-at-the-agreed-time)
@@ -180,9 +181,19 @@ This realizes the modification of the source code.
 
 Through `diy-part1.sh` and `diy-part2.sh` two scripts, we add operation commands to make more powerful functions.
 
+### 4.3 Make firmware with Image Builder
+
+The official website of OpenWrt provides the prepared openwrt-imagebuilder-*-armvirt-64.Linux-x86_64.tar.xz file (download address: [https://downloads.openwrt.org/releases](https://downloads.openwrt.org/releases)), you can use the official Image Builder to add packages and plug-ins to this file, usually Create an openwrt-rootfs.tar.gz file in just a few minutes. For the production method, please refer to the official document: [Using the Image Builder](https://openwrt.org/docs/guide-user/additional-software/imagebuilder)
+
+This repository provides a one-click production service. You only need to pass the branch parameters into the [imagebuilder script](openwrt-imagebuilder/imagebuilder.sh) to complete the production.
+
+- Localized make command: You can run the `sudo ./router-config/openwrt-imagebuilder/imagebuilder.sh 21.02.3` command in the `~/amlogic-s9xxx-openwrt` root directory to generate it. The parameter `21.02.3` is the version number of `releases` currently available for [download](https://downloads.openwrt.org/releases). The generated files are in the `openwrt/bin/targets/armvirt/64` directory.
+
+- Use github.com's `Actions` to make: [Build OpenWrt with Image Builder](../.github/workflows/build-openwrt-with-imagebuilder.yml)
+
 ## 5. Compile the firmware
 
-The firmware compilation process is controlled in the [.github/workflows/build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml) file. There are other `yml files` in the `workflows` directory to achieve other different functions. There are many ways to compile firmware, you can set timed compilation, manual compilation, or set some specific events to trigger compilation. Let's start with simple operations.
+The firmware compilation process is controlled in the [.github/workflows/build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml) file. There are other `yml files` in the `workflows` directory to achieve other different functions. There are many ways to compile firmware, you can set timed compilation, manual compilation, or set some specific events to trigger compilation. Let's start with simple operations.
 
 ### 5.1 Manual compilation
 
@@ -196,7 +207,7 @@ In the `navigation bar of your repository`, click the `Actions` button, and then
 
 ### 5.2 Compile at the agreed time
 
-In the [.github/workflows/build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml) file, use `cron` to set the timing compilation. The 5 different positions represent min (0 - 59) / hour (0 - 23) / day of month (1 - 31) / month (1 - 12) / day of week (0 - 6)(Sunday - Saturday). Set the time by modifying the values of different positions. The system uses `UTC standard time` by default, please convert it according to the time zone of your country.
+In the [.github/workflows/build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml) file, use `cron` to set the timing compilation. The 5 different positions represent min (0 - 59) / hour (0 - 23) / day of month (1 - 31) / month (1 - 12) / day of week (0 - 6)(Sunday - Saturday). Set the time by modifying the values of different positions. The system uses `UTC standard time` by default, please convert it according to the time zone of your country.
 
 ```yaml
 schedule:
@@ -205,7 +216,7 @@ schedule:
 
 ## 6. Save the firmware
 
-The settings saved by the firmware are also controlled in the [.github/workflows/build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml) file. We will automatically upload the compiled firmware to the `Actions` and `Releases` officially provided by `GitHub` through scripts, or upload it to a `third party` (such as WeTransfer).
+The settings saved by the firmware are also controlled in the [.github/workflows/build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml) file. We will automatically upload the compiled firmware to the `Actions` and `Releases` officially provided by `GitHub` through scripts, or upload it to a `third party` (such as WeTransfer).
 
 Now the longest storage period of `Actions in GitHub is 90 days`, `Releases is permanent`, and third parties such as WeTransfer are 7 days. First of all, we thank these service providers for their free support, but we also ask you to use it sparingly. We advocate the reasonable use of free services.
 
@@ -224,14 +235,14 @@ Now the longest storage period of `Actions in GitHub is 90 days`, `Releases is p
 ```yaml
 - name: Upload OpenWrt Firmware to Release
   uses: ncipollo/release-action@main
-  if: steps.build.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+  if: env.PACKAGED_STATUS == 'success' && !cancelled()
   with:
-    tag: openwrt_s9xxx_${{ env.FILE_DATE }}
-    artifacts: ${{ env.FILEPATH }}/*
+    tag: openwrt_amlogic_s9xxx_lede_${{ env.PACKAGED_OUTPUTDATE }}
+    artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
     allowUpdates: true
     token: ${{ secrets.GH_TOKEN }}
     body: |
-      This is OpenWrt firmware for Amlogic s9xxx TV Boxes
+      This is OpenWrt firmware for Amlogic s9xxx tv box
       * Firmware information
       Default IP: 192.168.1.1
       Default username: root
@@ -275,7 +286,7 @@ Enter from the GitHub `Releases` section at the bottom right corner of the `repo
 
 ### 7.3 Download from third parties
 
-In the [.github/workflows/build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml) file, upload to the third party is closed by default. If you need, change `false` to `true`, and upload to the third party when the compilation is completed next time. The third-party URL can be seen `in the log` of the firmware compilation process, and can also be output to the compilation information.
+In the [.github/workflows/build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml) file, upload to the third party is closed by default. If you need, change `false` to `true`, and upload to the third party when the compilation is completed next time. The third-party URL can be seen `in the log` of the firmware compilation process, and can also be output to the compilation information.
 
 ```yaml
 UPLOAD_COWTRANSFER: false
@@ -319,7 +330,7 @@ In addition to the default 13 models of TV Boxes are automatically installed, wh
 
 ### 9.1 Update using the operation panel
 
-`Log in to your OpenWrt system`, under the `System` menu, select the `Amlogic Service`, select the `Update OpenWrt` to update. (You can update from a higher version such as 5.15.25 to a lower version such as 5.10.100, or from a lower version such as 5.10.100 to a higher version such as 5.15.25. The kernel version number does not affect the update, and `you can freely update/downgrade`.)
+`Log in to your OpenWrt system`, under the `System` menu, select the `Amlogic Service`, select the `Update OpenWrt` to update. (You can update from a higher version such as 5.15.50 to a lower version such as 5.10.125, or from a lower version such as 5.10.125 to a higher version such as 5.15.50. The kernel version number does not affect the update, and `you can freely update/downgrade`.)
 
 ### 9.2 Update using script commands
 
@@ -330,7 +341,7 @@ openwrt-update-amlogic
 ```
 💡Tips: You can also put the `update file` in the `/mnt/mmcblk*p4/` directory, the `openwrt-update-amlogic` script will automatically find the `update file` from the `/mnt/mmcblk*p4/` directories.
 
-If there is only one `update file` in the ***`/mnt/mmcblk*p4/`*** directory, you can just enter the ***`openwrt-update-amlogic`*** command without specifying a specific `update file`. The `openwrt-update-amlogic` script will vaguely look for `update file` from this directory and try to update. If there are multiple `update file` in the `/mnt/mmcblk*p4/` directory, please use the ***`openwrt-update-amlogic openwrt_s905x3_v5.10.100_2021.03.17.0412.img.gz`*** command to specify the `update file`.
+If there is only one `update file` in the ***`/mnt/mmcblk*p4/`*** directory, you can just enter the ***`openwrt-update-amlogic`*** command without specifying a specific `update file`. The `openwrt-update-amlogic` script will vaguely look for `update file` from this directory and try to update. If there are multiple `update file` in the `/mnt/mmcblk*p4/` directory, please use the ***`openwrt-update-amlogic openwrt_s905x3_v5.10.125_2021.03.17.0412.img.gz`*** command to specify the `update file`.
 
 - The `openwrt-update-amlogic` update file search order
 
@@ -365,16 +376,15 @@ After you complete the `OpenWrt personalized configuration` locally, `save and e
 
 The official GitHub gave a detailed explanation. Regarding the use of `GitHub Actions`, you can start to get to know it from here: [Quickstart for GitHub Actions](https://docs.github.com/en/Actions/quickstart)
 
-Let’s make a few brief introductions based on the files being used in the repository: [build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml)
+Let’s make a few brief introductions based on the files being used in the repository: [build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml)
 
 #### 10.2.1 Replacing source code repositories and branches
 
-
 ```yaml
-#On Line 17: Source code library address
+#On Line 63: Source code library address
 REPO_URL: https://github.com/coolsnowwolf/lede
 
-#On Line 18: Branch name
+#On Line 64: Branch name
 REPO_BRANCH: master
 ```
 You can modify it to other, such as official:
@@ -385,39 +395,36 @@ REPO_BRANCH: openwrt-21.02
 
 #### 10.2.2 Change TV Boxes model and kernel version
 
-Near line 96, find `Build OpenWrt firmware`, Code snippet like this:
+Near line 139, find `Build OpenWrt firmware`, Code snippet like this:
 ```yaml
-    - name: Build OpenWrt firmware
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      id: build
-      run: |
-        [ -d openwrt-armvirt ] || mkdir -p openwrt-armvirt
-        cp -f openwrt/bin/targets/*/*/*rootfs.tar.gz openwrt-armvirt/ && sync
-        sudo rm -rf openwrt && sync
-        sudo rm -rf /workdir && sync
-        sudo chmod +x make
-        sudo ./make -d -b s905x3_s905x2_s905x_s905d_s922x_s912 -k 5.15.25_5.10.100
-        cd out/ && sudo gzip *.img
-        cp -f ../openwrt-armvirt/*rootfs.tar.gz . && sync
-        echo "FILEPATH=$PWD" >> $GITHUB_ENV
-        echo "::set-output name=status::success"
+- name: Build OpenWrt firmware
+  if: steps.compile.outputs.status == 'success' && !cancelled()
+  uses: ophub/amlogic-s9xxx-openwrt@main
+  with:
+    openwrt_path: openwrt/bin/targets/*/*/*rootfs.tar.gz
+    openwrt_soc: ${{ github.event.inputs.openwrt_soc }}
+    openwrt_kernel: ${{ github.event.inputs.openwrt_kernel }}
+    auto_kernel: ${{ github.event.inputs.auto_kernel }}
+    openwrt_size: ${{ github.event.inputs.openwrt_size }}
 ```
-Modify the -d parameter to the model of your box, and modify the value after the -k parameter to the version number of the kernel you want to compile:
-`sudo ./make -d -b s905x -k 5.10.100`. Optional parameters and usage method see: [Detailed make compile command](https://github.com/ophub/amlogic-s9xxx-openwrt#detailed-make-compile-command)
+Refer to the related [parameter description](https://github.com/ophub/amlogic-s9xxx-openwrt#github-actions-input-parameter-description) of the packaging command. The above setting options can be set by writing fixed values, or they can be selected through the `Actions` panel:
+<div style="width:100%;margin-top:40px;margin:5px;">
+<img src=https://user-images.githubusercontent.com/68696949/181870674-1816aa21-ece4-4149-83ce-6ec7f95ece68.png width="700" />
+</div>
 
 ### 10.3 Custom banner information
 
-The default [/etc/banner](../amlogic-s9xxx/common-files/rootfs/etc/banner) information is as follows, you can use the [banner generator](https://www.bootschool.net/ascii) Customize your own personalized banner information, just overwrite the file with the same name.
+The default [/etc/banner](../amlogic-s9xxx/common-files/rootfs/etc/banner) information is as follows, you can use the [banner generator](https://www.bootschool.net/ascii) Customize your own personalized banner information(The style below is `slant`), just overwrite the file with the same name.
 
 ```yaml
-  ██████╗ ██████╗ ███████╗███╗   ██╗██╗    ██╗██████╗ ████████╗
- ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██║    ██║██╔══██╗╚══██╔══╝
- ██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║ █╗ ██║██████╔╝   ██║
- ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║███╗██║██╔══██╗   ██║
- ╚██████╔╝██║     ███████╗██║ ╚████║╚███╔███╔╝██║  ██║   ██║
-  ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝
-────────────────────────────────────────────────────────────────
- ```
+     ___              __      ____                 _       __     __
+    /   |  ____ ___  / /     / __ \____  ___  ____| |     / /____/ /_
+   / /| | / __ `__ \/ /_____/ / / / __ \/ _ \/ __ \ | /| / / ___/ __/
+  / ___ |/ / / / / / /_____/ /_/ / /_/ /  __/ / / / |/ |/ / /  / /_
+ /_/  |_/_/ /_/ /_/_/      \____/ .___/\___/_/ /_/|__/|__/_/   \__/
+ A M L O G I C - S E R V I C E /_/ W I R E L E S S - F R E E D O M
+───────────────────────────────────────────────────────────────────────
+```
 
 ### 10.4 Custom feeds configuration file
 
@@ -425,16 +432,16 @@ When you look at the `feeds.conf.default` file in the `source code repository`, 
 
 ### 10.5 Custom software default configuration information
 
-When we use `OpenWrt`, we have already configured many software. Most of the `configuration information` of these software is stored in your OpenWrt's `/etc/config/` and other related directories. Copy the storage files of these configuration information to In the `files` folder under the root directory of the `repository in GitHub`, please `keep the directory structure and files the same`. During OpenWrt compilation, the storage files of these configuration information will be compiled into your firmware. The specific method is in the [.github/workflows/build-openwrt-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-lede.yml) file. Let's take a look at this code together:
+When we use `OpenWrt`, we have already configured many software. Most of the `configuration information` of these software is stored in your OpenWrt's `/etc/config/` and other related directories. Copy the storage files of these configuration information to In the `files` folder under the root directory of the `repository in GitHub`, please `keep the directory structure and files the same`. During OpenWrt compilation, the storage files of these configuration information will be compiled into your firmware. The specific method is in the [.github/workflows/build-openwrt-with-lede.yml](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/.github/workflows/build-openwrt-with-lede.yml) file. Let's take a look at this code together:
 
 ```yaml
 - name: Load custom configuration
   run: |
-    [ -e files ] && mv files openwrt/files
-    [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-    chmod +x $DIY_P2_SH
+    [[ -d "files" ]] && mv -f files openwrt/files
+    [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
+    chmod +x ${DIY_P2_SH}
     cd openwrt
-    $GITHUB_WORKSPACE/$DIY_P2_SH
+    ${GITHUB_WORKSPACE}/${DIY_P2_SH}
 ```
 
 Please do not copy the configuration information files that `involve privacy`. If `your repository is public`, then the files you put in the `files` directory are also `public`. Do not disclose the secrets. Some passwords and other information can be used using the `private key settings` you just learned in [Quickstart for GitHub Actions](https://docs.github.com/en/Actions/quickstart). You must understand what you are doing.
@@ -568,30 +575,34 @@ Subtarget      -> QEMU ARMv8 Virtual Machine (cortex-a53)
 Target Profile -> Default
 Target Images  -> tar.gz
 
-Languages -> Perl
-             -> perl-http-date
-             -> perlbase-getopt
-             -> perlbase-time
-             -> perlbase-unicode
-             -> perlbase-utf8
-
-Utilities -> Disc -> blkid、fdisk、lsblk、parted
-          -> Filesystem -> attr、btrfs-progs(Build with zstd support)、chattr、dosfstools、
-                           e2fsprogs、f2fs-tools、f2fsck、lsattr、mkf2fs、xfs-fsck、xfs-mkfs
-          -> Compression -> bsdtar、pigz
-          -> Shells -> bash
-          -> gawk、getopt、losetup、pv、tar、uuidgen、coremark
-             coreutils
-             -> coreutils-base64、coreutils-nohup
 
 Kernel modules -> Wireless Drivers -> kmod-brcmfmac(SDIO)
                                    -> kmod-brcmutil
                                    -> kmod-cfg80211
                                    -> kmod-mac80211
 
+
+Languages -> Perl
+             -> perl-http-date
+             -> perlbase-file
+             -> perlbase-getopt
+             -> perlbase-time
+             -> perlbase-unicode
+             -> perlbase-utf8
+
+
 Network -> WirelessAPD -> hostapd-common
                        -> wpa-cli
                        -> wpad-basic
         -> iw
+
+
+Utilities -> Compression -> bsdtar、pigz
+          -> Disc -> blkid、fdisk、lsblk、parted
+          -> Filesystem -> attr、btrfs-progs(Build with zstd support)、chattr、dosfstools、
+                           e2fsprogs、f2fs-tools、f2fsck、lsattr、mkf2fs、xfs-fsck、xfs-mkfs
+          -> Shells -> bash
+          -> acpid、coremark、coreutils(-> coreutils-base64、coreutils-nohup)、gawk、getopt、
+             losetup、pv、tar、uuidgen
 ```
 

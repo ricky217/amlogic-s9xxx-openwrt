@@ -1,5 +1,6 @@
 #==========================================================================
-# Description: Compile the Armbian kernel
+# Description: Compile the kernel
+# Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
 # Copyright (C) 2021 https://github.com/ophub/amlogic-s9xxx-armbian
 #==========================================================================
 
@@ -10,17 +11,40 @@ on:
   workflow_dispatch:
     inputs:
       kernel_repo:
-        description: "Source: kernel.org / unifreq"
+        description: "Select the kernel repository"
         required: false
         default: "unifreq"
+        type: choice
+        options:
+          - unifreq
+          - kernel.org
       kernel_version:
-        description: "Kernel version: 5.10.100"
+        description: "Select kernel version"
         required: false
-        default: "5.15.25_5.10.100"
+        default: "5.10.135_5.15.50"
+        type: choice
+        options:
+          - 5.4.210_5.10.135_5.15.50
+          - 5.4.210_5.10.135
+          - 5.10.135_5.15.50
+          - 5.15.50_5.19.1
+          - 5.4.210
+          - 5.10.135
+          - 5.15.50
+          - 5.19.1
       kernel_auto:
         description: "Auto use the latest kernel"
         required: false
-        default: "true"
+        default: true
+        type: boolean
+      kernel_package:
+        description: "Select compile package list"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - dtbs
       kernel_sign:
         description: "Set the kernel custom signature"
         required: false
@@ -31,7 +55,7 @@ on:
         default: ""
 
 env:
-  TZ: Asia/Shanghai
+  TZ: America/New_York
 
 jobs:
   build:
@@ -40,27 +64,29 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Initialization environment
+        id: init
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc 2>/dev/null
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depend_ubuntu2204_armbian)
+          sudo -E apt-get -qq install -y $(curl -fsSL https://is.gd/depend_ubuntu2204_armbian)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
-          sudo timedatectl set-timezone "$TZ"
-          echo "COMPILE_STARTINGTIME=$(date +"%m.%d.%H%M")" >> $GITHUB_ENV
+          sudo timedatectl set-timezone "${TZ}"
+          echo "::set-output name=status::success"
 
-      - name: Compile the kernel for Amlogic s9xxx
+      - name: Compile the kernel
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: kernel
           kernel_repo: ${{ github.event.inputs.kernel_repo }}
           kernel_version: ${{ github.event.inputs.kernel_version }}
           kernel_auto: ${{ github.event.inputs.kernel_auto }}
+          kernel_package: ${{ github.event.inputs.kernel_package }}
           kernel_sign: ${{ github.event.inputs.kernel_sign }}
           kernel_config: ${{ github.event.inputs.kernel_config }}
 

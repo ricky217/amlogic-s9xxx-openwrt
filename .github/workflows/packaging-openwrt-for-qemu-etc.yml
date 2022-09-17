@@ -1,9 +1,10 @@
 #=====================================================================================
-# https://github.com/ophub/amlogic-s9xxx-openwrt
-# Description: Use Releases file to packaging
+# Description: Packaging OpenWrt for qemu, allwinner, rockchip and amlogic
+# Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
+# Copyright (C) 2021 https://github.com/ophub/flippy-openwrt-actions
 #=====================================================================================
 
-name: Use Releases file to Packaging
+name: Packaging OpenWrt for qemu, etc.
 
 on:
   repository_dispatch:
@@ -20,30 +21,29 @@ on:
       openwrt_soc:
         description: "Select device SoC"
         required: false
-        default: "all"
+        default: "qemu_vplus_beikeyun_l1pro_r68s"
         type: choice
         options:
           - all
-          - s905x3_s905d_s912
-          - a311d
+          - qemu_vplus_beikeyun_l1pro_r68s_s922x_s905x3_s905d
+          - qemu_vplus_beikeyun_l1pro_r68s
+          - qemu
+          - vplus
+          - beikeyun
+          - l1pro
+          - r68s
           - s922x
           - s922x-n2
-          - s922x-reva
           - s905x3
           - s905x2
-          - s905x2-km3
           - s912
-          - s912-m8s
           - s905d
-          - s905d-ki
-          - s905x
-          - s905w
           - s905
-          - s905l3a
+          - diy
       openwrt_kernel:
         description: "Select kernel version"
         required: false
-        default: "5.10.135_5.15.50"
+        default: "5.15.50_5.19.1"
         type: choice
         options:
           - 5.4.210_5.10.135_5.15.50
@@ -59,10 +59,6 @@ on:
         required: false
         default: true
         type: boolean
-      openwrt_size:
-        description: "Set the rootfs size(Unit: MiB)."
-        required: false
-        default: "960"
 
 env:
   TZ: America/New_York
@@ -89,9 +85,8 @@ jobs:
           sudo timedatectl set-timezone "${TZ}"
           echo "::set-output name=status::success"
 
-      - name: Download OpenWrt Armvirt firmware
-        id: down
-        if: (!cancelled())
+      - name: Download armvirt file
+        id: download
         run: |
           openwrt_url="$(curl -s "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" | grep -o "OpenWrt_.*${{ github.event.inputs.branch }}.*/.*rootfs.tar.gz" | head -n 1)"
           [[ -z "${openwrt_url}" ]] && echo -e "OpenWrt file not found!" && exit 1
@@ -103,30 +98,27 @@ jobs:
           [[ "${?}" -ne "0" ]] && echo "The armvirt file download failed!" && exit 1
           echo "::set-output name=status::success"
 
-      - name: Build OpenWrt firmware
-        if: steps.down.outputs.status == 'success' && !cancelled()
-        uses: ophub/amlogic-s9xxx-openwrt@main
-        with:
-          openwrt_path: openwrt/bin/targets/*/*/*rootfs.tar.gz
-          openwrt_soc: ${{ github.event.inputs.openwrt_soc }}
-          openwrt_kernel: ${{ github.event.inputs.openwrt_kernel }}
-          auto_kernel: ${{ github.event.inputs.auto_kernel }}
-          openwrt_size: ${{ github.event.inputs.openwrt_size }}
+      - name: Packaging OpenWrt
+        uses: ophub/flippy-openwrt-actions@main
+        if: steps.download.outputs.status == 'success' && !cancelled()
+        env:
+          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*rootfs.tar.gz
+          KERNEL_REPO_URL: https://github.com/ophub/kernel/tree/main/pub/stable
+          PACKAGE_SOC: ${{ github.event.inputs.openwrt_soc }}
+          KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
+          KERNEL_AUTO_LATEST: ${{ github.event.inputs.auto_kernel }}
 
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
         if: env.PACKAGED_STATUS == 'success' && !cancelled()
         with:
-          tag: OpenWrt_Aml_${{ github.event.inputs.branch }}_${{ env.PACKAGED_OUTPUTDATE }}
+          tag: OpenWrt_aarch64_${{ env.PACKAGED_OUTPUTDATE }}
           artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           allowUpdates: true
           token: ${{ secrets.GH_TOKEN }}
           body: |
-            This is OpenWrt firmware for Amlogic s9xxx tv box
+            This is OpenWrt firmware for Armvirt 64
             * Firmware information
             Default IP: 192.168.1.1
             Default username: root
             Default password: password
-            Default WIFI name: OpenWrt
-            Default WIFI password: none
-            Install to EMMC: Login to OpenWrt → System → Amlogic Service → Install OpenWrt
